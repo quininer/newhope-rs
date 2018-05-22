@@ -1,0 +1,11 @@
+[package]
+name = "cnewhope"
+version = "0.1.0"
+authors = ["Wire Swiss GmbH <support@wire.com>"]
+build = "build.rs"
+
+[lib]
+path = "lib.rs"
+
+[build-dependencies]
+cc = "1"
