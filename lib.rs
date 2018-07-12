@@ -17,7 +17,6 @@
 #![feature(test)]
 
 pub const N: usize = 1024;
-pub const N2: usize = 2 * N;
 pub const Q: usize = 12_289;
 pub const POLY_BYTES: usize = 1792;
 pub const SEEDBYTES: usize = 32;
@@ -34,6 +33,9 @@ extern "C" {
     pub fn newhope_keygen(send: *mut u8, sk: *mut Poly);
     pub fn newhope_sharedb(sharedkey: *mut u8, send: *mut u8, received: *const u8);
     pub fn newhope_shareda(sharedkey: *mut u8, ska: *const Poly, received: *const u8);
+
+    pub fn poly_frombytes(r: &mut Poly, a: *const u8);
+    pub fn poly_tobytes(r: *mut u8, p: *const Poly);
 }
 
 #[repr(C)]
@@ -50,20 +52,23 @@ impl Default for Poly {
 }
 
 impl Poly {
-    pub fn to_bytes(&self) -> [u8; N2] {
-        let mut output = [0u8; N2];
-        for i in 0..N {
-            output[2 * i] = ((self.coeffs[i] >> 8) & 0xff) as u8;
-            output[2 * i + 1] = (self.coeffs[i] & 0xff) as u8;
+    pub fn to_bytes(&self) -> [u8; POLY_BYTES] {
+        let mut output = [0; POLY_BYTES];
+
+        unsafe {
+            poly_tobytes(output.as_mut_ptr(), self);
         }
+
         output
     }
 
-    pub fn from_bytes(bytes: &[u8; N2]) -> Poly {
+    pub fn from_bytes(bytes: &[u8; POLY_BYTES]) -> Poly {
         let mut poly = Poly::default();
-        for i in 0..N {
-            poly.coeffs[i] = (u16::from(bytes[2 * i]) << 8) + u16::from(bytes[2 * i + 1]);
+
+        unsafe {
+            poly_frombytes(&mut poly, bytes.as_ptr());
         }
+
         poly
     }
 }
@@ -78,7 +83,7 @@ impl Eq for Poly {}
 
 impl Debug for Poly {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{:?}", &self.coeffs.to_vec())
+        write!(f, "{:?}", &self.coeffs[..])
     }
 }
 
@@ -96,6 +101,28 @@ fn test_newhope() {
     unsafe {
         newhope_keygen(senda.as_mut_ptr(), &mut ska);
         newhope_sharedb(keyb.as_mut_ptr(), sendb.as_mut_ptr(), senda.as_ptr());
+        newhope_shareda(keya.as_mut_ptr(), &ska, sendb.as_ptr());
+    }
+
+    assert!(keya != [0; 32]);
+    assert_eq!(keya, keyb);
+}
+
+#[test]
+fn test_newhope_bytes() {
+    let (mut senda, mut sendb) = ([0; SENDABYTES], [0; SENDBBYTES]);
+    let (mut keya, mut keyb) = ([0; 32], [0; 32]);
+    let mut ska = Poly::default();
+
+    unsafe {
+        newhope_keygen(senda.as_mut_ptr(), &mut ska);
+        newhope_sharedb(keyb.as_mut_ptr(), sendb.as_mut_ptr(), senda.as_ptr());
+    }
+
+    let ska_bytes = ska.to_bytes();
+    let ska = Poly::from_bytes(&ska_bytes);
+
+    unsafe {
         newhope_shareda(keya.as_mut_ptr(), &ska, sendb.as_ptr());
     }
 
